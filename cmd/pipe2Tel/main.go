@@ -1,9 +1,11 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,19 +38,14 @@ func main() {
 		}
 	} else {
 		// Read input from stdin
-		reader := bufio.NewReader(os.Stdin)
-		input, err := reader.ReadString('\n')
+		var buffer bytes.Buffer
+		_, err := io.Copy(&buffer, os.Stdin)
 		if err != nil {
 			fmt.Println("Error reading input message from stdin:", err)
 			usageGuide()
 			os.Exit(1)
 		}
-		message = strings.TrimSpace(input)
-		if message == "" {
-			fmt.Println("The message string could not be empty, Sorry.")
-			usageGuide()
-			os.Exit(1)
-		}
+		message = buffer.String()
 	}
 
 	escapedMessage := escapeMarkdownV2(message)
@@ -77,7 +74,7 @@ func escapeMarkdownV2(input string) string {
 	// Perhaps you found this useful:
 	// https://github.com/telegraf/telegraf/issues/1242
 	// Note that the "\\" should be the first item.
-	specialChars := []string{"\\", "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!", "&"}
+	specialChars := []string{"!", "#", "+", "-", "=", "{", "}", ".", "&"}
 	for _, char := range specialChars {
 		input = strings.ReplaceAll(input, char, "\\"+char)
 	}
@@ -101,10 +98,21 @@ func sendMessage(botToken, chatID, message string, restricted bool) {
 		fmt.Println("Error sending message:", err)
 		return
 	}
-	defer resp.Body.Close()
 
+	// Check and print response status
 	if resp.StatusCode != http.StatusOK {
-		fmt.Println("Error: Telegram API responded with status", resp.StatusCode)
+		fmt.Printf("Error: Telegram API responded with status %d\n", resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println("Error reading response body:", err)
+			return
+		}
+		var formattedBody bytes.Buffer
+		if err := json.Indent(&formattedBody, body, "", "  "); err == nil {
+			fmt.Println("Response JSON:")
+			fmt.Println(formattedBody.String())
+		}
 	} else {
 		fmt.Println("Message sent successfully!")
 	}
