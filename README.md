@@ -5,7 +5,7 @@ A command-line tool to send text or files into Telegram chats via a Bot API, wit
 ## Installation
 
 ```bash
-go install github.com/awirshf45d/pipe2Tel/cmd/pipe2Tel@vlatest
+go install github.com/awirshf45d/pipe2Tel/cmd/pipe2Tel@latest
 ```
 
 ## Usage
