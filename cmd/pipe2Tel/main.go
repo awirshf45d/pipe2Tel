@@ -6,11 +6,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
+
+const maxMessageLength = 4080
 
 func main() {
 	botToken := flag.String("bot_token", "", "Telegram bot token")
@@ -20,63 +24,63 @@ func main() {
 
 	flag.Parse()
 
-	// Validate required flags
 	if *botToken == "" || *chatID == "" {
 		fmt.Println("Error: bot_token and chat_id are required")
 		usageGuide()
 		os.Exit(1)
 	}
 
-	// Determine the message source
-	var message string
+	// Determine input
+	var (
+		message  string
+		isFile   bool
+		filePath string
+	)
+
 	if *msg != "" {
-		// Check if msg is a file or direct text
-		if fileContent, err := readFileContent(*msg); err == nil {
-			message = fileContent
+		if info, err := os.Stat(*msg); err == nil && !info.IsDir() {
+			filePath = *msg
+			isFile = true
 		} else {
 			message = *msg
 		}
 	} else {
-		// Read input from stdin
-		var buffer bytes.Buffer
-		_, err := io.Copy(&buffer, os.Stdin)
-		if err != nil {
-			fmt.Println("Error reading input message from stdin:", err)
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, os.Stdin); err != nil {
+			fmt.Println("Error reading stdin:", err)
 			usageGuide()
 			os.Exit(1)
 		}
-		message = buffer.String()
+		message = buf.String()
 	}
 
-	escapedMessage := escapeMarkdownV2(message)
-
-	sendMessage(*botToken, *chatID, escapedMessage, *restricted)
+	// Choose text or document
+	if isFile || len(message) > maxMessageLength {
+		if !isFile {
+			tmpFile, err := os.CreateTemp("", "msg-*.txt")
+			if err != nil {
+				fmt.Println("Error creating temp file:", err)
+				return
+			}
+			defer os.Remove(tmpFile.Name())
+			tmpFile.WriteString(message)
+			tmpFile.Close()
+			filePath = tmpFile.Name()
+		}
+		sendDocument(*botToken, *chatID, filePath, *restricted)
+	} else {
+		esc := escapeMarkdownV2(message)
+		sendMessage(*botToken, *chatID, esc, *restricted)
+	}
 }
 
-func readFileContent(path string) (string, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	if info.IsDir() {
-		return "", fmt.Errorf("provided path is a directory, not a file")
-	}
-
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-// escapes special characters for MarkdownV2
+// escapeMarkdownV2 escapes all MarkdownV2 special characters.
+// See: https://core.telegram.org/bots/api#markdownv2-style
 func escapeMarkdownV2(input string) string {
-	// Perhaps you found this useful:
-	// https://github.com/telegraf/telegraf/issues/1242
-	// Note that the "\\" should be the first item.
-	specialChars := []string{"!", "#", "+", "-", "=", "{", "}", ".", "&"}
-	for _, char := range specialChars {
-		input = strings.ReplaceAll(input, char, "\\"+char)
+	// Escape backslash first
+	specialChars := []string{"\\", "[", "]", "(", ")", "~", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
+	for _, c := range specialChars {
+		input = strings.ReplaceAll(input, c, "\\"+c)
 	}
 	return input
 }
@@ -87,49 +91,76 @@ func sendMessage(botToken, chatID, message string, restricted bool) {
 	data.Set("chat_id", chatID)
 	data.Set("text", message)
 	data.Set("parse_mode", "MarkdownV2")
-
 	if restricted {
 		data.Set("disable_web_page_preview", "true")
 		data.Set("protect_content", "true")
 	}
-
 	resp, err := http.PostForm(apiURL, data)
+	handleResponse(resp, err)
+}
+
+func sendDocument(botToken, chatID, path string, restricted bool) {
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendDocument", botToken)
+	file, err := os.Open(path)
 	if err != nil {
-		fmt.Println("Error sending message:", err)
+		fmt.Println("Error opening file:", err)
 		return
 	}
+	defer file.Close()
 
-	// Check and print response status
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	writer.WriteField("chat_id", chatID)
+	if restricted {
+		writer.WriteField("disable_web_page_preview", "true")
+		writer.WriteField("protect_content", "true")
+	}
+
+	part, err := writer.CreateFormFile("document", filepath.Base(path))
+	if err != nil {
+		fmt.Println("Error creating form file:", err)
+		return
+	}
+	io.Copy(part, file)
+	writer.Close()
+
+	req, err := http.NewRequest("POST", apiURL, &body)
+	if err != nil {
+		fmt.Println("Error creating request:", err)
+		return
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	handleResponse(resp, err)
+}
+
+func handleResponse(resp *http.Response, err error) {
+	if err != nil {
+		fmt.Println("Error sending request:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Error: Telegram API responded with status %d\n", resp.StatusCode)
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Println("Error reading response body:", err)
-			return
-		}
-		var formattedBody bytes.Buffer
-		if err := json.Indent(&formattedBody, body, "", "  "); err == nil {
+		fmt.Printf("Error: API responded with %d\n", resp.StatusCode)
+		var out bytes.Buffer
+		if json.Indent(&out, bodyBytes, "", "  ") == nil {
 			fmt.Println("Response JSON:")
-			fmt.Println(formattedBody.String())
+			fmt.Println(out.String())
+		} else {
+			fmt.Println(string(bodyBytes))
 		}
 	} else {
-		fmt.Println("Message sent successfully!")
+		fmt.Println("Sent successfully!")
 	}
 }
 
-// Usage guide
 func usageGuide() {
 	fmt.Println("Usage:")
-	fmt.Println("I>   pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-restricted] [-msg=<TEXT OR FILE_PATH>]")
-	fmt.Println("II>  echo \"sth\" | pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-restricted]")
-	fmt.Println()
-	fmt.Println("Options:")
-	fmt.Println("  -bot_token    The Telegram bot token (required)")
-	fmt.Println("  -chat_id      The Telegram chat ID (required)")
-	fmt.Println("  -rs           Optional flag to enable restricted mode (no web page preview, no notification)")
-	fmt.Println("  -msg          The message to send. If this is a file path, the file content is used as the message.")
-	fmt.Println("                If it's not a file path, it's treated as direct text.")
-	fmt.Println()
-	fmt.Println("If no -msg flag is provided, the program will read the message from stdin(II).")
+	fmt.Println("  pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-rs] [-msg=<TEXT OR FILE_PATH>]")
+	fmt.Println("  echo \"text\" | pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID>[-rs]")
 }
