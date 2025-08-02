@@ -25,7 +25,7 @@ II>  echo "sth" | pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-restricted]
 * Short messages use `sendMessage`; long texts & files use `sendDocument` with `multipart/form-data`.
 * Temporary files are cleaned up automatically.
 
-
+## Resources
 You may find these resources useful:
 - https://core.telegram.org/bots/api
 - [BotFather on t.me](https://t.me/botfather)
