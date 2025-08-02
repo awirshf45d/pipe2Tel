@@ -1,22 +1,30 @@
 # pipe2Tel
->I've only implemented the _sendMessage_ method, which fulfills my requirements for another project.
->The pipe2Tel tool currently supports only the _MarkdownV2_ parse_mode, but I'll enhance it as my needs evolve in different scenarios.
 
-### Useage
+A command-line tool to send text or files into Telegram chats via a Bot API, with automatic handling of long messages.
+
+## Installation
+
+```bash
+go install github.com/awirshf45d/pipe2Tel/cmd/pipe2Tel@v1.2.0
+```
+
+## Usage
+
 ```plaintext
-Usage:
 I>   pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-restricted] [-msg=<TEXT OR FILE_PATH>]
 II>  echo "sth" | pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-restricted]
-
-Options:
-  -bot_token    The Telegram bot token (required)
-  -chat_id      The Telegram chat ID (required)
-  -rs           Optional flag to enable restricted mode (no web page preview, no notification)
-  -msg          The message to send. If this is a file path, the file content is used as the message.
-                If it's not a file path, it's treated as direct text.
-
-If no -msg flag is provided, the program will read the message from stdin(II).
 ```
+* **`-bot_token`** (`string`, required): Your Telegram bot token. 
+* **`-chat_id`** (`string`, required): Target chat ID or channel username.
+* **`-msg`** (`string`, optional): Message text or file path. If omitted, reads from stdin.
+* **`-rs`** (`flag`, optional): Restricted mode (no previews, no web page).
+
+## Details
+
+* **MarkdownV2** by default with full escaping of special characters (excluding backticks, underscore, asterisk) so code fences and bold/italic texts render correctly. It covers: backslash (`\`), square brackets (`[ ]`), parentheses (`( )`), tilde (`~`), greater-than (`>`), hash (`#`), plus (`+`), minus (`-`), equal (`=`), pipe (`|`), curly braces (`{ }`), period (`.`), and exclamation mark (`!`).
+* Short messages use `sendMessage`; long texts & files use `sendDocument` with `multipart/form-data`.
+* Temporary files are cleaned up automatically.
+
 
 You may find these resources useful:
 - https://core.telegram.org/bots/api
