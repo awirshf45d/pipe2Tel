@@ -11,8 +11,8 @@ go install github.com/awirshf45d/pipe2Tel/cmd/pipe2Tel@vlatest
 ## Usage
 
 ```plaintext
-I>   pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-restricted] [-msg=<TEXT OR FILE_PATH>]
-II>  echo "sth" | pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-restricted]
+I>   pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-rs] -msg=<TEXT OR FILE_PATH>
+II>  echo "sth" | pipe2Tel -bot_token=<TOKEN> -chat_id=<CHAT_ID> [-rs]
 ```
 * **`-bot_token`** (`string`, required): Your Telegram bot token. 
 * **`-chat_id`** (`string`, required): Target chat ID or channel username.
